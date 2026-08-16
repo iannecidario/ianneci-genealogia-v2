@@ -9,6 +9,7 @@
   let centerId = '', rootId = '', aLevels = 1, dLevels = 1, zoom = 1;
   let panX = 0, panY = 0, dragging = false, startX = 0, startY = 0, pointerX = 0, pointerY = 0;
   let transformFrame = 0, dragged = false, suppressClick = false;
+  stage.style.position = 'relative';
 
   const esc = (value = '') => String(value).replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]);
   const personName = person => [person.nome, person.cognome].filter(Boolean).join(' ') || 'Senza nome';
@@ -64,19 +65,19 @@
     const assigned = new Set(unions.flatMap(union => union.children.map(child => child.id)));
     const unassigned = person.figliIds.map(id => map.get(id)).filter(Boolean).filter(child => !assigned.has(child.id)).sort((a, b) => numericYear(a.annoNascita) - numericYear(b.annoNascita) || personName(a).localeCompare(personName(b), 'it', { sensitivity: 'base' }) || a.id.localeCompare(b.id));
     if (!unassigned.length) return '';
-    return `<div class="w-px h-5 bg-gray-300 mx-auto"></div><section><div class="text-[10px] uppercase tracking-widest text-gray-400 mb-2">Figli</div><div class="border-t border-gray-300 pt-3 flex justify-center gap-4">${unassigned.map(child => node(child)).join('')}</div></section>`;
+    return `<section data-unassigned-children class="w-max mx-auto mt-3 flex flex-col items-center"><span class="block h-4" aria-hidden="true"></span><div data-children-label class="text-[10px] uppercase tracking-widest text-gray-400 my-1">Figli</div><span class="block h-4" aria-hidden="true"></span><div data-children-row class="pt-3 flex justify-center gap-4">${unassigned.map(child => `<div class="relative flex flex-col items-center">${node(child)}</div>`).join('')}</div></section>`;
   }
 
   function unionStack(person, unions) {
     if (!unions.length) return node(person, true);
     const unionRows = unions.map((union, index) => {
-      const marriageData = [union.marriage.data || union.marriage.anno, union.marriage.luogo].filter(Boolean).join(' · ');
+      const marriageData = union.marriage.data || union.marriage.anno || '';
       const spouseNodes = union.spouses.length ? union.spouses.map(spouse => node(spouse)).join('') : '<span class="text-xs text-gray-400">Unione</span>';
       const orderedChildren = [...union.children].sort((a, b) => numericYear(a.annoNascita) - numericYear(b.annoNascita) || personName(a).localeCompare(personName(b), 'it', { sensitivity: 'base' }) || a.id.localeCompare(b.id));
-      const children = orderedChildren.length ? `<div data-children-group class="mt-2 w-max flex flex-col items-center"><div class="text-[10px] uppercase tracking-widest text-gray-400 mb-1">Figli con ${esc(union.spouses.map(personName).join(', '))}</div><span class="block w-px h-4 bg-gray-300" aria-hidden="true"></span><div data-children-row class="border-t border-gray-300 pt-3 flex flex-nowrap justify-center gap-4">${orderedChildren.map(child => `<div class="relative flex flex-col items-center"><span class="absolute left-1/2 -top-3 w-px h-3 bg-gray-300" aria-hidden="true"></span>${node(child)}</div>`).join('')}</div></div>` : '';
-      return `<section data-union-index="${index}" class="relative"><div data-spouse-row class="flex items-center"><span class="block w-6 h-px bg-[#4a5d4e]" aria-hidden="true"></span><div data-spouse-group class="flex flex-col gap-2">${spouseNodes}</div></div>${marriageData ? `<div class="ml-6 text-[10px] text-gray-500 mt-1">${esc(marriageData)}</div>` : ''}${children}</section>`;
+      const children = orderedChildren.length ? `<div data-children-group class="mt-2 w-max flex flex-col items-center"><span class="block h-4" aria-hidden="true"></span><div data-children-label class="text-[10px] uppercase tracking-widest text-gray-400 my-1">Figli con ${esc(union.spouses.map(personName).join(', '))}</div><span class="block h-4" aria-hidden="true"></span><div data-children-row class="pt-3 flex flex-nowrap justify-center gap-4">${orderedChildren.map(child => `<div class="relative flex flex-col items-center">${node(child)}</div>`).join('')}</div></div>` : '';
+      return `<section data-union-index="${index}" class="relative"><div data-spouse-row class="flex items-center"><span class="block w-6" aria-hidden="true"></span><div data-spouse-group class="flex flex-col gap-2">${spouseNodes}</div></div>${marriageData ? `<div data-marriage-label class="ml-6 text-[10px] text-gray-500 mt-1">${esc(marriageData)}</div>` : ''}${children}</section>`;
     }).join('');
-    return `<div data-union-layout class="flex items-start"><div class="shrink-0">${node(person, true)}</div><span class="block w-6 h-px bg-[#4a5d4e] mt-[1.6rem]" aria-hidden="true"></span><div class="border-l border-[#4a5d4e] flex flex-col gap-5">${unionRows}</div></div>`;
+    return `<div data-union-layout class="flex items-start"><div class="shrink-0">${node(person, true)}</div><span class="block w-6" aria-hidden="true"></span><div data-union-rail class="flex flex-col gap-5">${unionRows}</div></div>`;
   }
 
   function alignUnionChildren() {
@@ -94,6 +95,81 @@
       const childrenCenter = (childrenRect.left + childrenRect.right) / 2;
       childrenGroup.style.transform = `translateX(${(coupleCenter - childrenCenter) / zoom}px)`;
     });
+    drawTreeConnectors();
+  }
+
+  function drawTreeConnectors() {
+    stage.querySelector('[data-tree-connectors]')?.remove();
+    const central = stage.querySelector('[data-central-node]');
+    if (!central) return;
+    const stageRect = stage.getBoundingClientRect();
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.dataset.treeConnectors = '';
+    svg.setAttribute('width', stage.scrollWidth);
+    svg.setAttribute('height', stage.scrollHeight);
+    svg.setAttribute('aria-hidden', 'true');
+    svg.classList.add('absolute', 'inset-0', 'overflow-visible', 'pointer-events-none');
+    const x = value => (value - stageRect.left) / zoom;
+    const y = value => (value - stageRect.top) / zoom;
+    const line = (x1, y1, x2, y2, marriage = false) => {
+      const element = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      element.setAttribute('x1', x1); element.setAttribute('y1', y1);
+      element.setAttribute('x2', x2); element.setAttribute('y2', y2);
+      element.setAttribute('stroke', marriage ? '#4a5d4e' : '#d1d5db');
+      element.setAttribute('stroke-width', '1');
+      element.setAttribute('vector-effect', 'non-scaling-stroke');
+      svg.appendChild(element);
+    };
+    const verticalAvoiding = (screenX, screenStart, screenEnd, labels, marriage = false) => {
+      const gap = 4;
+      let cursor = screenStart;
+      const obstacles = labels.map(label => label.getBoundingClientRect()).filter(rect => screenX >= rect.left - gap && screenX <= rect.right + gap && rect.bottom >= screenStart && rect.top <= screenEnd).sort((a, b) => a.top - b.top);
+      obstacles.forEach(rect => {
+        if (rect.top - gap > cursor) line(x(screenX), y(cursor), x(screenX), y(rect.top - gap), marriage);
+        cursor = Math.max(cursor, rect.bottom + gap);
+      });
+      if (cursor < screenEnd) line(x(screenX), y(cursor), x(screenX), y(screenEnd), marriage);
+    };
+    const centralRect = central.getBoundingClientRect();
+    const rail = stage.querySelector('[data-union-rail]');
+    const unions = [...stage.querySelectorAll('[data-union-index]')];
+    if (rail && unions.length) {
+      const railX = rail.getBoundingClientRect().left;
+      const centralY = (centralRect.top + centralRect.bottom) / 2;
+      const spouseCenters = unions.map(union => {
+        const rect = union.querySelector('[data-spouse-group]').getBoundingClientRect();
+        return { union, rect, centerY: (rect.top + rect.bottom) / 2 };
+      });
+      line(x(centralRect.right), y(centralY), x(railX), y(centralY), true);
+      verticalAvoiding(railX, Math.min(centralY, ...spouseCenters.map(item => item.centerY)), Math.max(centralY, ...spouseCenters.map(item => item.centerY)), [...stage.querySelectorAll('[data-marriage-label], [data-children-label]')], true);
+      spouseCenters.forEach(({ union, rect, centerY }) => {
+        line(x(railX), y(centerY), x(rect.left), y(centerY), true);
+        const group = union.querySelector('[data-children-group]');
+        const row = union.querySelector('[data-children-row]');
+        if (!group || !row) return;
+        const groupRect = group.getBoundingClientRect();
+        const rowRect = row.getBoundingClientRect();
+        const coupleX = (centralRect.left + centralRect.right + rect.left + rect.right) / 4;
+        verticalAvoiding(coupleX, centerY, rowRect.top, [...union.querySelectorAll('[data-marriage-label], [data-children-label]')]);
+        const children = [...row.querySelectorAll(':scope > div > .tree-node')].map(child => child.getBoundingClientRect());
+        if (!children.length) return;
+        const centers = children.map(child => (child.left + child.right) / 2);
+        line(x(Math.min(...centers)), y(rowRect.top), x(Math.max(...centers)), y(rowRect.top));
+        children.forEach((child, index) => line(x(centers[index]), y(rowRect.top), x(centers[index]), y(child.top)));
+      });
+    }
+    const unassigned = stage.querySelector('[data-unassigned-children]');
+    if (unassigned) {
+      const row = unassigned.querySelector('[data-children-row]');
+      const rowRect = row.getBoundingClientRect();
+      const centerX = (centralRect.left + centralRect.right) / 2;
+      verticalAvoiding(centerX, centralRect.bottom, rowRect.top, [...unassigned.querySelectorAll('[data-children-label]')]);
+      const children = [...row.querySelectorAll(':scope > div > .tree-node')].map(child => child.getBoundingClientRect());
+      const centers = children.map(child => (child.left + child.right) / 2);
+      if (centers.length) line(x(Math.min(...centers)), y(rowRect.top), x(Math.max(...centers)), y(rowRect.top));
+      children.forEach((child, index) => line(x(centers[index]), y(rowRect.top), x(centers[index]), y(child.top)));
+    }
+    stage.prepend(svg);
   }
 
   function centerView() {
