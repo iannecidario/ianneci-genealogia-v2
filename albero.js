@@ -14,6 +14,7 @@
   const personName = person => [person.nome, person.cognome].filter(Boolean).join(' ') || 'Senza nome';
   const normalized = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('it');
   const isMarame = person => (person.rami || []).some(branch => normalized(branch.nome) === 'marame');
+  const numericYear = value => Number.isFinite(Number(value)) && Number(value) > 0 ? Number(value) : Infinity;
   const applyTransform = () => {
     transformFrame = 0;
     stage.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${zoom})`;
@@ -23,8 +24,8 @@
   function node(person, central = false) {
     const background = isMarame(person) ? 'bg-[#e7f0e8]' : 'bg-[#f9f9ff]';
     const border = central ? 'border-2 border-[#4a5d4e]' : 'border border-gray-200';
-    const years = `${person.annoNascita || 'Anno non disponibile'}${person.annoMorte ? `–${person.annoMorte}` : ''}`;
-    return `<div class="tree-node ${background} ${border} rounded-lg px-2.5 py-2 inline-flex items-center gap-1.5 text-left min-w-[8.5rem] max-w-[12rem]" style="min-width:136px" data-person-id="${esc(person.id)}"${central ? ' data-central-node' : ''}><button type="button" data-center="${esc(person.id)}" class="flex-1 min-w-0 text-left" aria-label="Centra l’albero su ${esc(personName(person))}"><strong class="block text-sm leading-tight truncate">${esc(personName(person))}</strong><span class="block text-[11px] leading-tight text-gray-500 mt-0.5">${esc(years)}</span></button><a href="scheda.html?id=${encodeURIComponent(person.id)}&from=albero" aria-label="Apri la scheda di ${esc(personName(person))}" class="material-symbols-outlined text-[#4a5d4e] text-xl p-0.5">person</a></div>`;
+    const years = person.annoNascita ? `${person.annoNascita}${person.annoMorte ? `–${person.annoMorte}` : ''}` : '';
+    return `<div class="tree-node ${background} ${border} rounded-lg px-2.5 py-2 inline-flex text-left min-w-[8.5rem] max-w-[12rem]" style="min-width:136px" data-person-id="${esc(person.id)}"${central ? ' data-central-node' : ''}><button type="button" data-center="${esc(person.id)}" class="w-full min-w-0 text-left" aria-label="Centra l’albero su ${esc(personName(person))}"><strong class="block text-sm leading-tight whitespace-normal [overflow-wrap:anywhere]">${esc(personName(person))}</strong>${years ? `<span class="block text-[11px] leading-tight text-gray-500 mt-0.5">${esc(years)}</span>` : ''}</button></div>`;
   }
 
   function parents(ids, level, seen = new Set(), connectToGeneration = true) {
@@ -47,24 +48,34 @@
 
   function unionData(person) {
     const personMarriages = marriages.filter(marriage => [...marriage.maritoIds, ...marriage.moglieIds].includes(person.id));
-    return personMarriages.map(marriage => {
+    return personMarriages.map((marriage, stableIndex) => {
       const spouseIds = [...marriage.maritoIds, ...marriage.moglieIds].filter(id => id !== person.id);
       const spouses = spouseIds.map(id => map.get(id)).filter(Boolean);
       const children = person.figliIds.map(id => map.get(id)).filter(Boolean).filter(child => spouseIds.some(spouseId => child.padreIds.includes(spouseId) || child.madreIds.includes(spouseId)));
-      return { marriage, spouses, children };
-    });
+      const marriageYear = numericYear(marriage.anno || String(marriage.data || '').match(/\d{4}/)?.[0]);
+      const spouseYear = Math.min(...spouses.map(spouse => numericYear(spouse.annoNascita)));
+      const firstChildYear = Math.min(...children.map(child => numericYear(child.annoNascita)));
+      const order = Number.isFinite(marriageYear) ? marriageYear : Number.isFinite(spouseYear) ? spouseYear : firstChildYear;
+      return { marriage, spouses, children, stableIndex, order };
+    }).sort((a, b) => a.order - b.order || a.stableIndex - b.stableIndex);
   }
 
-  function childGroups(person, unions) {
+  function unassignedChildren(person, unions) {
     const assigned = new Set(unions.flatMap(union => union.children.map(child => child.id)));
-    const groups = unions.filter(union => union.children.length).map(union => ({
-      label: union.spouses.length ? `Figli con ${union.spouses.map(personName).join(', ')}` : 'Figli',
-      children: union.children
-    }));
     const unassigned = person.figliIds.map(id => map.get(id)).filter(Boolean).filter(child => !assigned.has(child.id));
-    if (unassigned.length) groups.push({ label: 'Figli', children: unassigned });
-    if (!groups.length) return '';
-    return `<div class="w-px h-5 bg-gray-300 mx-auto"></div><div class="flex justify-center gap-6 items-start">${groups.map(group => `<section class="relative"><div class="text-[10px] uppercase tracking-widest text-gray-400 mb-2">${esc(group.label)}</div><div class="border-t border-gray-300 pt-3 flex justify-center gap-4">${group.children.map(child => node(child)).join('')}</div></section>`).join('')}</div>`;
+    if (!unassigned.length) return '';
+    return `<div class="w-px h-5 bg-gray-300 mx-auto"></div><section><div class="text-[10px] uppercase tracking-widest text-gray-400 mb-2">Figli</div><div class="border-t border-gray-300 pt-3 flex justify-center gap-4">${unassigned.map(child => node(child)).join('')}</div></section>`;
+  }
+
+  function unionStack(person, unions) {
+    if (!unions.length) return node(person, true);
+    const unionRows = unions.map((union, index) => {
+      const marriageData = [union.marriage.data || union.marriage.anno, union.marriage.luogo].filter(Boolean).join(' · ');
+      const spouseNodes = union.spouses.length ? union.spouses.map(spouse => node(spouse)).join('') : '<span class="text-xs text-gray-400">Unione</span>';
+      const children = union.children.length ? `<div class="ml-6 mt-2"><div class="text-[10px] uppercase tracking-widest text-gray-400 mb-2">Figli con ${esc(union.spouses.map(personName).join(', '))}</div><div class="border-t border-gray-300 pt-3 flex flex-wrap gap-4">${union.children.map(child => node(child)).join('')}</div></div>` : '';
+      return `<section data-union-index="${index}" class="relative"><div class="flex items-center"><span class="block w-6 h-px bg-[#4a5d4e]" aria-hidden="true"></span><div class="flex flex-col gap-2">${spouseNodes}</div></div>${marriageData ? `<div class="ml-6 text-[10px] text-gray-500 mt-1">${esc(marriageData)}</div>` : ''}${children}</section>`;
+    }).join('');
+    return `<div data-union-layout class="flex items-start"><div class="shrink-0">${node(person, true)}</div><span class="block w-6 h-px bg-[#4a5d4e] mt-[1.6rem]" aria-hidden="true"></span><div class="border-l border-[#4a5d4e] flex flex-col gap-5">${unionRows}</div></div>`;
   }
 
   function centerView() {
@@ -113,20 +124,16 @@
     if (!person) return;
     centerLabel.innerHTML = `Persona al centro: <strong>${esc(personName(person))}</strong>`;
     const unions = unionData(person);
-    const spouses = [...new Map(unions.flatMap(union => union.spouses).map(spouse => [spouse.id, spouse])).values()];
     const siblings = people.filter(relative => relative.id !== person.id && (relative.padreIds.some(id => person.padreIds.includes(id)) || relative.madreIds.some(id => person.madreIds.includes(id))));
     const birthOrder = relative => Number.isFinite(Number(relative.annoNascita)) && Number(relative.annoNascita) > 0 ? Number(relative.annoNascita) : Infinity;
     const generation = [person, ...siblings].sort((a, b) => birthOrder(a) - birthOrder(b) || personName(a).localeCompare(personName(b), 'it', { sensitivity: 'base' }) || a.id.localeCompare(b.id));
     const parentSignature = relative => [...new Set([...relative.padreIds, ...relative.madreIds])].sort().join('|');
     const allShareTheSameParents = siblings.length > 0 && siblings.every(sibling => parentSignature(sibling) === parentSignature(person));
-    const marriageRows = unions.map(union => [union.marriage.data || union.marriage.anno, union.marriage.luogo].filter(Boolean).join(' · ')).filter(Boolean);
-    const spousesLeft = spouses.filter((_, index) => index % 2 === 1).reverse();
-    const spousesRight = spouses.filter((_, index) => index % 2 === 0);
-    const couple = `<div class="grid grid-cols-[1fr_auto_1fr] items-center"><div class="flex items-center justify-end gap-2">${spousesLeft.map(spouse => `${node(spouse)}<span class="block w-6 h-px bg-[#4a5d4e]" aria-hidden="true"></span>`).join('')}</div>${node(person, true)}<div class="flex items-center justify-start gap-2">${spousesRight.map(spouse => `<span class="block w-6 h-px bg-[#4a5d4e]" aria-hidden="true"></span>${node(spouse)}`).join('')}</div></div>${marriageRows.length ? `<div class="text-[10px] text-gray-500 mt-2">${marriageRows.map(esc).join(' | ')}</div>` : ''}`;
-    const groups = childGroups(person, unions);
+    const couple = unionStack(person, unions);
+    const otherChildren = unassignedChildren(person, unions);
     const immediateChildren = person.figliIds.map(id => map.get(id)).filter(Boolean);
     const nextGeneration = [...new Set(immediateChildren.flatMap(child => child.figliIds))];
-    const selectedBranch = `${couple}${groups}${dLevels > 1 ? laterDescendants(nextGeneration, dLevels - 1) : ''}`;
+    const selectedBranch = `${couple}${otherChildren}${dLevels > 1 ? laterDescendants(nextGeneration, dLevels - 1) : ''}`;
     const generationRow = `<div data-generation-row class="flex justify-center items-start gap-4${allShareTheSameParents ? ' border-t border-gray-300 pt-3' : ''}">${generation.map(relative => `<div data-generation-member="${esc(relative.id)}" class="flex flex-col items-center">${allShareTheSameParents ? '<span class="w-px h-3 bg-gray-300 -mt-3 mb-0" aria-hidden="true"></span>' : ''}${relative.id === person.id ? selectedBranch : node(relative)}</div>`).join('')}</div>`;
     stage.innerHTML = `${parents([...person.padreIds, ...person.madreIds], aLevels, new Set(), !siblings.length || allShareTheSameParents)}${generationRow}`;
     stage.querySelectorAll('[data-center]').forEach(button => button.addEventListener('click', () => {
