@@ -2,15 +2,23 @@
   const stage = document.getElementById('tree-stage');
   const viewport = document.getElementById('tree-viewport');
   const centerLabel = document.getElementById('tree-center');
+  const panel = document.getElementById('person-panel');
+  const panelFrame = document.getElementById('person-panel-frame');
+  const desktop = window.matchMedia('(min-width: 1024px)');
   let people = [], marriages = [], map = new Map();
   let centerId = '', rootId = '', aLevels = 1, dLevels = 1, zoom = 1;
-  let panX = 0, panY = 0, dragging = false, startX = 0, startY = 0;
+  let panX = 0, panY = 0, dragging = false, startX = 0, startY = 0, pointerX = 0, pointerY = 0;
+  let transformFrame = 0, dragged = false, suppressClick = false;
 
   const esc = (value = '') => String(value).replace(/[&<>'"]/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]);
   const personName = person => [person.nome, person.cognome].filter(Boolean).join(' ') || 'Senza nome';
   const normalized = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('it');
   const isMarame = person => (person.rami || []).some(branch => normalized(branch.nome) === 'marame');
-  const applyTransform = () => { stage.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`; };
+  const applyTransform = () => {
+    transformFrame = 0;
+    stage.style.transform = `translate3d(${panX}px, ${panY}px, 0) scale(${zoom})`;
+  };
+  const scheduleTransform = () => { if (!transformFrame) transformFrame = requestAnimationFrame(applyTransform); };
 
   function node(person, central = false) {
     const background = isMarame(person) ? 'bg-[#e7f0e8]' : 'bg-[#f9f9ff]';
@@ -80,7 +88,24 @@
     centerId = id;
     zoom = 1;
     history.replaceState(null, '', `albero.html?id=${encodeURIComponent(centerId)}`);
+    if (desktop.matches) openPanel(id);
     render(true);
+  }
+
+  function openPanel(id) {
+    if (!desktop.matches) return;
+    panel.hidden = false;
+    if (panelFrame.dataset.personId !== id) {
+      panelFrame.dataset.personId = id;
+      panelFrame.src = `scheda.html?id=${encodeURIComponent(id)}&panel=1`;
+    }
+  }
+
+  function closePanel(recenter = true) {
+    panel.hidden = true;
+    panelFrame.removeAttribute('src');
+    delete panelFrame.dataset.personId;
+    if (recenter) requestAnimationFrame(centerView);
   }
 
   function render(autoCenter = false) {
@@ -97,14 +122,18 @@
     const groups = childGroups(person, unions);
     const immediateChildren = person.figliIds.map(id => map.get(id)).filter(Boolean);
     const nextGeneration = [...new Set(immediateChildren.flatMap(child => child.figliIds))];
-    stage.innerHTML = `${parents([...person.padreIds, ...person.madreIds], aLevels)}${siblings.length ? `<div class="text-[10px] uppercase tracking-widest text-gray-400 my-2">Fratelli e sorelle</div><div class="flex justify-center gap-4 mb-3">${siblings.map(sibling => node(sibling)).join('')}</div><div class="w-px h-4 bg-gray-300 mx-auto"></div>` : ''}${couple}${groups}${dLevels > 1 ? laterDescendants(nextGeneration, dLevels - 1) : ''}`;
-    stage.querySelectorAll('[data-center]').forEach(button => button.addEventListener('click', () => selectPerson(button.dataset.center)));
+    stage.innerHTML = `${parents([...person.padreIds, ...person.madreIds], aLevels)}${couple}${groups}${dLevels > 1 ? laterDescendants(nextGeneration, dLevels - 1) : ''}${siblings.length ? `<section class="mt-6 pt-4 border-t border-dashed border-gray-200"><div class="text-[10px] uppercase tracking-widest text-gray-400 mb-2">Fratelli e sorelle · pari grado</div><div class="flex justify-center gap-4">${siblings.map(sibling => node(sibling)).join('')}</div></section>` : ''}`;
+    stage.querySelectorAll('[data-center]').forEach(button => button.addEventListener('click', () => {
+      if (suppressClick) return;
+      selectPerson(button.dataset.center);
+    }));
     if (autoCenter) centerView(); else applyTransform();
   }
 
   document.getElementById('ancestors').addEventListener('click', event => { aLevels = aLevels % 3 + 1; event.currentTarget.textContent = `Antenati · ${aLevels}`; render(true); });
   document.getElementById('descendants').addEventListener('click', event => { dLevels = dLevels % 3 + 1; event.currentTarget.textContent = `Discendenti · ${dLevels}`; render(true); });
   document.getElementById('center-tree').addEventListener('click', centerView);
+  document.getElementById('close-person-panel').addEventListener('click', () => closePanel());
   document.getElementById('reset-tree').addEventListener('click', () => {
     centerId = rootId; aLevels = dLevels = 1; zoom = 1; panX = panY = 0;
     document.getElementById('ancestors').textContent = 'Antenati · 1';
@@ -115,18 +144,38 @@
   document.getElementById('zoom-out').addEventListener('click', () => { zoom = Math.max(.6, zoom - .1); centerView(); });
 
   viewport.addEventListener('pointerdown', event => {
-    if (event.target.closest('a,button')) return;
-    dragging = true; startX = event.clientX - panX; startY = event.clientY - panY;
+    if (event.target.closest('a')) return;
+    dragging = true; dragged = false; pointerX = event.clientX; pointerY = event.clientY;
+    startX = event.clientX - panX; startY = event.clientY - panY;
+    stage.style.transition = 'none';
     viewport.setPointerCapture(event.pointerId); viewport.classList.add('dragging');
   });
-  viewport.addEventListener('pointermove', event => { if (dragging) { panX = event.clientX - startX; panY = event.clientY - startY; applyTransform(); } });
+  viewport.addEventListener('pointermove', event => {
+    if (!dragging) return;
+    if (Math.hypot(event.clientX - pointerX, event.clientY - pointerY) > 4) dragged = true;
+    panX = event.clientX - startX; panY = event.clientY - startY;
+    scheduleTransform();
+  });
   const stopDrag = event => {
     if (!dragging) return;
     dragging = false; viewport.classList.remove('dragging');
+    if (transformFrame) {
+      cancelAnimationFrame(transformFrame);
+      applyTransform();
+    }
+    stage.style.transition = '';
+    if (dragged) {
+      suppressClick = true;
+      setTimeout(() => { suppressClick = false; }, 0);
+    }
     if (viewport.hasPointerCapture(event.pointerId)) viewport.releasePointerCapture(event.pointerId);
   };
   viewport.addEventListener('pointerup', stopDrag);
   viewport.addEventListener('pointercancel', stopDrag);
+  desktop.addEventListener('change', event => {
+    if (!event.matches && !panel.hidden) closePanel(false);
+    requestAnimationFrame(centerView);
+  });
 
   window.IanneceAPI.fetchFamilyMembers().then(data => {
     people = data.records || [];
