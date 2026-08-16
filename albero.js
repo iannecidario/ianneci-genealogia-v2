@@ -80,6 +80,7 @@
   }
 
   function alignUnionChildren() {
+    compactSiblingGroup();
     const central = stage.querySelector('[data-central-node]');
     if (!central) return;
     const centralRect = central.getBoundingClientRect();
@@ -95,6 +96,31 @@
       childrenGroup.style.transform = `translateX(${(coupleCenter - childrenCenter) / zoom}px)`;
     });
     drawTreeConnectors();
+  }
+
+  function compactSiblingGroup() {
+    const group = stage.querySelector('[data-sibling-group]');
+    if (!group) return;
+    const members = group.querySelectorAll(':scope > [data-generation-member]');
+    if (!desktop.matches) {
+      members.forEach(member => {
+        member.style.removeProperty('width');
+        member.style.removeProperty('flex');
+        member.style.removeProperty('align-items');
+      });
+      return;
+    }
+    members.forEach(member => {
+      const central = member.querySelector('[data-central-node]');
+      const ownNode = central || member.querySelector('.tree-node');
+      if (!ownNode) return;
+      const ownRect = ownNode.getBoundingClientRect();
+      const spouseRects = central ? [...member.querySelectorAll('[data-spouse-group]')].map(spouse => spouse.getBoundingClientRect()) : [];
+      const rightEdge = spouseRects.length ? Math.max(ownRect.right, ...spouseRects.map(rect => rect.right)) : ownRect.right;
+      member.style.width = `${(rightEdge - ownRect.left) / zoom}px`;
+      member.style.flex = '0 0 auto';
+      member.style.alignItems = central ? 'flex-start' : 'center';
+    });
   }
 
   function drawTreeConnectors() {
