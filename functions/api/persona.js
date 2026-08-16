@@ -1,25 +1,3 @@
-import { airtableRequest, json, mapPerson, peopleTable, publicPerson } from './_airtable.js';
-
+import { branchFields, fetchAll, json, mapBranch, mapMarriage, mapPerson, marriageFields, peopleFields, summary, tables } from './_airtable.js';
 const recordIdPattern = /^rec[a-zA-Z0-9]{14}$/;
-
-async function loadRelation(env, id) {
-    const record = await airtableRequest(env, `${peopleTable}/${id}`);
-    const person = mapPerson(record);
-    return { id: person.id, nomeCompleto: person.nomeCompleto };
-}
-
-export async function onRequestGet({ request, env }) {
-    const id = new URL(request.url).searchParams.get('id') || '';
-    if (!recordIdPattern.test(id)) return json({ error: 'Identificativo persona non valido' }, 400);
-    try {
-        const record = await airtableRequest(env, `${peopleTable}/${id}`);
-        const mapped = mapPerson(record);
-        const [padre, madre] = await Promise.all([
-            Promise.all(mapped.padreIds.map((relationId) => loadRelation(env, relationId))),
-            Promise.all(mapped.madreIds.map((relationId) => loadRelation(env, relationId)))
-        ]);
-        return json({ person: { ...publicPerson(mapped), padre, madre } });
-    } catch (error) {
-        return json({ error: error.message }, 503);
-    }
-}
+export async function onRequestGet({ request, env }) { const id = new URL(request.url).searchParams.get('id') || ''; if (!recordIdPattern.test(id)) return json({ error: 'Identificativo persona non valido' }, 400); try { const [pr, mr, br] = await Promise.all([fetchAll(env, tables.people, peopleFields), fetchAll(env, tables.marriages, marriageFields), fetchAll(env, tables.branches, branchFields)]); const people = pr.map(mapPerson), peopleMap = new Map(people.map((p) => [p.id,p])); const branches = br.map(mapBranch), branchMap = new Map(branches.map((b) => [b.id,b])); const person = peopleMap.get(id); if (!person) return json({ error: 'Persona non trovata' }, 404); const relation = (rid) => peopleMap.has(rid) ? summary(peopleMap.get(rid), branchMap) : null; const matrimoni = mr.map(mapMarriage).filter((m) => [...m.maritoIds,...m.moglieIds].includes(id)).map((m) => ({ ...m, coniugi: [...m.maritoIds,...m.moglieIds].filter((pid) => pid !== id).map(relation).filter(Boolean) })); return json({ person: { ...person, rami: person.ramoIds.map((rid) => branchMap.get(rid)).filter(Boolean), padre: person.padreIds.map(relation).filter(Boolean), madre: person.madreIds.map(relation).filter(Boolean), figli: [...new Set([...person.figliPadreIds,...person.figliMadreIds])].map(relation).filter(Boolean), matrimoni } }); } catch (error) { return json({ error: error.message }, 503); } }

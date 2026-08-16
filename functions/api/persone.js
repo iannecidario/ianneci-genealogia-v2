@@ -1,23 +1,2 @@
-import { airtableRequest, json, mapPerson, peopleTable, publicPerson } from './_airtable.js';
-
-const fields = ['NOME COMPLETO', 'ID PERSONA', 'NOME', 'COGNOME', 'ANNO DI NASCITA', 'ANNO DI MORTE', 'FOTO'];
-
-export async function onRequestGet({ env }) {
-    try {
-        const records = [];
-        let offset = '';
-        do {
-            const params = new URLSearchParams({ pageSize: '100' });
-            fields.forEach((field) => params.append('fields[]', field));
-            params.append('sort[0][field]', 'NOME COMPLETO');
-            params.append('sort[0][direction]', 'asc');
-            if (offset) params.set('offset', offset);
-            const page = await airtableRequest(env, peopleTable, params);
-            records.push(...page.records.map((record) => publicPerson(mapPerson(record))));
-            offset = page.offset || '';
-        } while (offset);
-        return json({ records, count: records.length });
-    } catch (error) {
-        return json({ error: error.message }, 503);
-    }
-}
+import { branchFields, fetchAll, json, mapBranch, mapMarriage, mapPerson, marriageFields, peopleFields, summary, tables } from './_airtable.js';
+export async function onRequestGet({ env }) { try { const [pr, mr, br] = await Promise.all([fetchAll(env, tables.people, peopleFields), fetchAll(env, tables.marriages, marriageFields), fetchAll(env, tables.branches, branchFields)]); const branches = br.map(mapBranch); const branchMap = new Map(branches.map((b) => [b.id, b])); const records = pr.map(mapPerson).map((p) => summary(p, branchMap)).sort((a,b) => a.nomeCompleto.localeCompare(b.nomeCompleto,'it')); return json({ records, marriages: mr.map(mapMarriage), branches, count: records.length }); } catch (error) { return json({ error: error.message }, 503); } }

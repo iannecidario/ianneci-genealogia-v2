@@ -9,6 +9,7 @@
 
     window.IanneceAPI = {
         fetchFamilyMembers: () => request('/api/persone'),
-        fetchPerson: (id) => request(`/api/persona?id=${encodeURIComponent(id)}`)
+        fetchPerson: (id) => request(`/api/persona?id=${encodeURIComponent(id)}`),
+        fetchBranches: () => request('/api/rami')
     };
 })();

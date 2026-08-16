@@ -1,58 +1,13 @@
 const DEFAULT_BASE_ID = 'appg6dg7Eyzbu1H0T';
-const PEOPLE_TABLE = 'tblMBCkm2GEzVnAkF';
 const AIRTABLE_API = 'https://api.airtable.com/v0';
-
-export function json(data, status = 200) {
-    return new Response(JSON.stringify(data), {
-        status,
-        headers: {
-            'content-type': 'application/json; charset=utf-8',
-            'cache-control': status === 200 ? 'public, max-age=60' : 'no-store',
-            'x-content-type-options': 'nosniff'
-        }
-    });
-}
-
-export async function airtableRequest(env, path, params = new URLSearchParams()) {
-    if (!env.AIRTABLE_TOKEN) throw new Error('Configurazione Airtable incompleta');
-    const baseId = env.AIRTABLE_BASE_ID || DEFAULT_BASE_ID;
-    const url = new URL(`${AIRTABLE_API}/${baseId}/${path}`);
-    url.search = params.toString();
-    const response = await fetch(url, { headers: { Authorization: `Bearer ${env.AIRTABLE_TOKEN}` } });
-    if (!response.ok) {
-        console.error('Airtable request failed', response.status);
-        throw new Error('Impossibile leggere l’archivio genealogico');
-    }
-    return response.json();
-}
-
-export const peopleTable = PEOPLE_TABLE;
-
-export function mapPerson(record) {
-    const fields = record.fields || {};
-    const firstPhoto = Array.isArray(fields.FOTO) ? fields.FOTO[0] : null;
-    return {
-        id: record.id,
-        idPersona: fields['ID PERSONA'] || null,
-        nomeCompleto: fields['NOME COMPLETO'] || [fields.NOME, fields.COGNOME].filter(Boolean).join(' ') || 'Senza nome',
-        nome: fields.NOME || '',
-        cognome: fields.COGNOME || '',
-        dataNascita: fields['DATA DI NASCITA'] || '',
-        annoNascita: fields['ANNO DI NASCITA'] || '',
-        luogoNascita: fields['LUOGO DI NASCITA'] || '',
-        abitazione: fields.ABITAZIONE || '',
-        residenza: fields.RESIDENZA || '',
-        dataMorte: fields['DATA DI MORTE'] || '',
-        annoMorte: fields['ANNO DI MORTE'] || '',
-        luogoMorte: fields['LUOGO DI MORTE'] || '',
-        foto: firstPhoto?.thumbnails?.large?.url || firstPhoto?.url || '',
-        note: fields.NOTE || '',
-        padreIds: fields.PADRE || [],
-        madreIds: fields.MADRE || []
-    };
-}
-
-export function publicPerson(person) {
-    const { padreIds, madreIds, ...safe } = person;
-    return safe;
-}
+export const tables = { people: 'tblMBCkm2GEzVnAkF', marriages: 'tblYm7gFbTNkF4O6o', branches: 'tblVHXE74oGWdnOIh' };
+export function json(data, status = 200) { return new Response(JSON.stringify(data), { status, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': status === 200 ? 'public, max-age=60' : 'no-store', 'x-content-type-options': 'nosniff' } }); }
+export async function airtableRequest(env, path, params = new URLSearchParams()) { if (!env.AIRTABLE_TOKEN) throw new Error('Configurazione Airtable incompleta'); const url = new URL(`${AIRTABLE_API}/${env.AIRTABLE_BASE_ID || DEFAULT_BASE_ID}/${path}`); url.search = params.toString(); const response = await fetch(url, { headers: { Authorization: `Bearer ${env.AIRTABLE_TOKEN}` } }); if (!response.ok) { console.error('Airtable request failed', response.status); throw new Error('Impossibile leggere l’archivio genealogico'); } return response.json(); }
+export async function fetchAll(env, table, fields = []) { const records = []; let offset = ''; do { const params = new URLSearchParams({ pageSize: '100' }); fields.forEach((field) => params.append('fields[]', field)); if (offset) params.set('offset', offset); const page = await airtableRequest(env, table, params); records.push(...page.records); offset = page.offset || ''; } while (offset); return records; }
+export function mapPerson(record) { const f = record.fields || {}; const photo = Array.isArray(f.FOTO) ? f.FOTO[0] : null; return { id: record.id, idPersona: f['ID PERSONA'] || null, nomeCompleto: f['NOME COMPLETO'] || [f.NOME, f.COGNOME].filter(Boolean).join(' ') || 'Senza nome', nome: f.NOME || '', cognome: f.COGNOME || '', dataNascita: f['DATA DI NASCITA'] || '', annoNascita: f['ANNO DI NASCITA'] || '', luogoNascita: f['LUOGO DI NASCITA'] || '', abitazione: f.ABITAZIONE || '', residenza: f.RESIDENZA || '', dataMorte: f['DATA DI MORTE'] || '', annoMorte: f['ANNO DI MORTE'] || '', luogoMorte: f['LUOGO DI MORTE'] || '', foto: photo?.thumbnails?.large?.url || photo?.url || '', note: f.NOTE || '', padreIds: f.PADRE || [], madreIds: f.MADRE || [], figliPadreIds: f['FIGLI - PADRE'] || [], figliMadreIds: f['FIGLI - MADRE'] || [], matrimonioMaritoIds: f['MATRIMONI COME MARITO'] || [], matrimonioMoglieIds: f['MATRIMONI COME MOGLIE'] || [], ramoIds: f['RAMO FAMILIARE'] || [] }; }
+export function mapMarriage(record) { const f = record.fields || {}; const document = Array.isArray(f.DOCUMENTO) ? f.DOCUMENTO[0] : null; return { id: record.id, idMatrimonio: f['ID MATRIMONIO'] || null, titolo: f.MATRIMONIO || '', maritoIds: f.MARITO || [], moglieIds: f.MOGLIE || [], data: f['DATA MATRIMONIO'] || '', anno: f['ANNO MATRIMONIO'] || '', luogo: f['LUOGO MATRIMONIO'] || '', note: f.NOTE || '', documento: document?.url || '' }; }
+export function mapBranch(record) { const f = record.fields || {}; return { id: record.id, nome: f['RAMO FAMILIARE'] || 'Ramo senza nome', iniziatore: f['INIZIATORE DEL SOPRANNOME'] || '', origine: f['ORIGINE DEL SOPRANNOME'] || '', periodo: f.PERIODO || '', note: f.NOTE || '', personaIds: f.PERSONE || [] }; }
+export const peopleFields = ['NOME COMPLETO','ID PERSONA','NOME','COGNOME','DATA DI NASCITA','ANNO DI NASCITA','LUOGO DI NASCITA','ABITAZIONE','RESIDENZA','DATA DI MORTE','ANNO DI MORTE','LUOGO DI MORTE','MATRIMONI COME MARITO','MATRIMONI COME MOGLIE','PADRE','FIGLI - PADRE','MADRE','FIGLI - MADRE','FOTO','NOTE','RAMO FAMILIARE'];
+export const marriageFields = ['MATRIMONIO','ID MATRIMONIO','MARITO','MOGLIE','DATA MATRIMONIO','ANNO MATRIMONIO','LUOGO MATRIMONIO','NOTE','DOCUMENTO'];
+export const branchFields = ['RAMO FAMILIARE','INIZIATORE DEL SOPRANNOME','ORIGINE DEL SOPRANNOME','PERIODO','NOTE','PERSONE'];
+export function summary(person, branchMap = new Map()) { return { id: person.id, idPersona: person.idPersona, nomeCompleto: person.nomeCompleto, nome: person.nome, cognome: person.cognome, annoNascita: person.annoNascita, annoMorte: person.annoMorte, foto: person.foto, padreIds: person.padreIds, madreIds: person.madreIds, figliIds: [...new Set([...person.figliPadreIds, ...person.figliMadreIds])], matrimonioIds: [...new Set([...person.matrimonioMaritoIds, ...person.matrimonioMoglieIds])], ramoIds: person.ramoIds, rami: person.ramoIds.map((id) => branchMap.get(id)).filter(Boolean).map((r) => ({ id: r.id, nome: r.nome })) }; }

@@ -2,9 +2,9 @@
 
 Nuova versione sperimentale e indipendente dell’applicazione genealogica Iannece, basata sull’interfaccia generata con Google Stitch.
 
-La base grafica usa HTML, CSS (Tailwind CSS via CDN) e JavaScript. Home, Persone, Albero, Cronologia e Scheda persona sono predisposte; dati genealogici e integrazione Airtable non sono ancora attivi.
+La base grafica usa HTML, CSS (Tailwind CSS via CDN) e JavaScript. Home, Persone, Albero, Rami, Cronologia e Scheda persona utilizzano i dati reali di Airtable tramite API protette. Sono disponibili ricerca, filtri, navigazione genealogica, matrimoni multipli e collegamenti tra familiari.
 
-L’accesso ad Airtable avviene esclusivamente tramite Cloudflare Pages Functions. Il browser interroga `/api/persone` e `/api/persona`; il token non viene mai inviato al frontend.
+L’accesso ad Airtable avviene esclusivamente tramite Cloudflare Pages Functions. Il browser interroga `/api/persone`, `/api/persona` e `/api/rami`; il token non viene mai inviato al frontend.
 
 ## Configurazione Airtable
 
