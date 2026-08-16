@@ -27,13 +27,13 @@
     return `<div class="tree-node ${background} ${border} rounded-lg px-2.5 py-2 inline-flex items-center gap-1.5 text-left min-w-[8.5rem] max-w-[12rem]" style="min-width:136px" data-person-id="${esc(person.id)}"${central ? ' data-central-node' : ''}><button type="button" data-center="${esc(person.id)}" class="flex-1 min-w-0 text-left" aria-label="Centra l’albero su ${esc(personName(person))}"><strong class="block text-sm leading-tight truncate">${esc(personName(person))}</strong><span class="block text-[11px] leading-tight text-gray-500 mt-0.5">${esc(years)}</span></button><a href="scheda.html?id=${encodeURIComponent(person.id)}&from=albero" aria-label="Apri la scheda di ${esc(personName(person))}" class="material-symbols-outlined text-[#4a5d4e] text-xl p-0.5">person</a></div>`;
   }
 
-  function parents(ids, level, seen = new Set()) {
+  function parents(ids, level, seen = new Set(), connectToGeneration = true) {
     if (level < 1) return '';
     const relatives = ids.map(id => map.get(id)).filter(Boolean).filter(person => !seen.has(person.id));
     if (!relatives.length) return '';
     relatives.forEach(person => seen.add(person.id));
     const next = [...new Set(relatives.flatMap(person => [...person.padreIds, ...person.madreIds]))];
-    return `${parents(next, level - 1, seen)}<div class="text-[10px] uppercase tracking-widest text-gray-400 my-2">${level === aLevels ? 'Genitori' : 'Antenati'}</div><div class="flex justify-center gap-4 mb-2">${relatives.map(person => node(person)).join('')}</div><div class="w-px h-5 bg-gray-300 mx-auto"></div>`;
+    return `${parents(next, level - 1, seen)}<div class="text-[10px] uppercase tracking-widest text-gray-400 my-2">${level === aLevels ? 'Genitori' : 'Antenati'}</div><div class="flex justify-center gap-4 mb-2">${relatives.map(person => node(person)).join('')}</div>${connectToGeneration ? '<div class="w-px h-5 bg-gray-300 mx-auto"></div>' : ''}`;
   }
 
   function laterDescendants(ids, level, seen = new Set()) {
@@ -115,6 +115,10 @@
     const unions = unionData(person);
     const spouses = [...new Map(unions.flatMap(union => union.spouses).map(spouse => [spouse.id, spouse])).values()];
     const siblings = people.filter(relative => relative.id !== person.id && (relative.padreIds.some(id => person.padreIds.includes(id)) || relative.madreIds.some(id => person.madreIds.includes(id))));
+    const birthOrder = relative => Number.isFinite(Number(relative.annoNascita)) && Number(relative.annoNascita) > 0 ? Number(relative.annoNascita) : Infinity;
+    const generation = [person, ...siblings].sort((a, b) => birthOrder(a) - birthOrder(b) || personName(a).localeCompare(personName(b), 'it', { sensitivity: 'base' }) || a.id.localeCompare(b.id));
+    const parentSignature = relative => [...new Set([...relative.padreIds, ...relative.madreIds])].sort().join('|');
+    const allShareTheSameParents = siblings.length > 0 && siblings.every(sibling => parentSignature(sibling) === parentSignature(person));
     const marriageRows = unions.map(union => [union.marriage.data || union.marriage.anno, union.marriage.luogo].filter(Boolean).join(' · ')).filter(Boolean);
     const spousesLeft = spouses.filter((_, index) => index % 2 === 1).reverse();
     const spousesRight = spouses.filter((_, index) => index % 2 === 0);
@@ -122,7 +126,9 @@
     const groups = childGroups(person, unions);
     const immediateChildren = person.figliIds.map(id => map.get(id)).filter(Boolean);
     const nextGeneration = [...new Set(immediateChildren.flatMap(child => child.figliIds))];
-    stage.innerHTML = `${parents([...person.padreIds, ...person.madreIds], aLevels)}${couple}${groups}${dLevels > 1 ? laterDescendants(nextGeneration, dLevels - 1) : ''}${siblings.length ? `<section class="mt-6 pt-4 border-t border-dashed border-gray-200"><div class="text-[10px] uppercase tracking-widest text-gray-400 mb-2">Fratelli e sorelle · pari grado</div><div class="flex justify-center gap-4">${siblings.map(sibling => node(sibling)).join('')}</div></section>` : ''}`;
+    const selectedBranch = `${couple}${groups}${dLevels > 1 ? laterDescendants(nextGeneration, dLevels - 1) : ''}`;
+    const generationRow = `<div data-generation-row class="flex justify-center items-start gap-4${allShareTheSameParents ? ' border-t border-gray-300 pt-3' : ''}">${generation.map(relative => `<div data-generation-member="${esc(relative.id)}" class="flex flex-col items-center">${allShareTheSameParents ? '<span class="w-px h-3 bg-gray-300 -mt-3 mb-0" aria-hidden="true"></span>' : ''}${relative.id === person.id ? selectedBranch : node(relative)}</div>`).join('')}</div>`;
+    stage.innerHTML = `${parents([...person.padreIds, ...person.madreIds], aLevels, new Set(), !siblings.length || allShareTheSameParents)}${generationRow}`;
     stage.querySelectorAll('[data-center]').forEach(button => button.addEventListener('click', () => {
       if (suppressClick) return;
       selectPerson(button.dataset.center);
