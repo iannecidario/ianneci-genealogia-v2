@@ -7,9 +7,9 @@
   let panX = 0, panY = 0, dragging = false, startX = 0, startY = 0;
 
   const esc = (v = '') => String(v).replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[c]);
-  const life = p => `${p.annoNascita || '…'}–${p.annoMorte || '…'}`;
+  const personName = person => [person.nome, person.cognome].filter(Boolean).join(' ') || 'Senza nome';
   const applyTransform = () => { stage.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`; };
-  const node = p => `<div class="tree-node bg-[#f9f9ff] border border-gray-200 rounded-xl p-3 inline-flex items-center gap-2 text-left"><a href="scheda.html?id=${encodeURIComponent(p.id)}&from=albero" class="flex-1"><strong class="block text-sm">${esc(p.nomeCompleto)}</strong><span class="text-[10px] text-gray-500">${esc(life(p))}</span></a><button data-center="${esc(p.id)}" aria-label="Metti al centro ${esc(p.nomeCompleto)}" class="material-symbols-outlined text-[#4a5d4e]">my_location</button></div>`;
+  const node = person => `<div class="tree-node bg-[#f9f9ff] border border-gray-200 rounded-lg px-2.5 py-2 inline-flex items-center gap-1.5 text-left min-w-[8.5rem] max-w-[12rem]"><a href="scheda.html?id=${encodeURIComponent(person.id)}&from=albero" class="flex-1 min-w-0"><strong class="block text-sm leading-tight truncate">${esc(personName(person))}</strong><span class="block text-[11px] leading-tight text-gray-500 mt-0.5">${esc(person.annoNascita || 'Anno non disponibile')}</span></a><button data-center="${esc(person.id)}" aria-label="Metti al centro ${esc(personName(person))}" class="material-symbols-outlined text-[#4a5d4e] text-xl p-0.5">my_location</button></div>`;
 
   function parents(ids, level, seen = new Set()) {
     if (level < 1) return '';
@@ -32,7 +32,7 @@
   function render() {
     const p = map.get(centerId);
     if (!p) return;
-    centerLabel.innerHTML = `Persona al centro: <strong>${esc(p.nomeCompleto)}</strong>`;
+    centerLabel.innerHTML = `Persona al centro: <strong>${esc(personName(p))}</strong>`;
     const ms = marriages.filter(m => [...m.maritoIds, ...m.moglieIds].includes(p.id));
     const spouseIds = [...new Set(ms.flatMap(m => [...m.maritoIds, ...m.moglieIds]).filter(id => id !== p.id))];
     const spouses = spouseIds.map(id => map.get(id)).filter(Boolean);
