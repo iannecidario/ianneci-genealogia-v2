@@ -111,6 +111,7 @@
     const x = value => (value - stageRect.left) / zoom;
     const y = value => (value - stageRect.top) / zoom;
     const line = (x1, y1, x2, y2, marriage = false) => {
+      if (Math.abs(x1 - x2) < .01 && Math.abs(y1 - y2) < .01) return;
       const element = document.createElementNS('http://www.w3.org/2000/svg', 'line');
       element.setAttribute('x1', x1); element.setAttribute('y1', y1);
       element.setAttribute('x2', x2); element.setAttribute('y2', y2);
@@ -153,7 +154,7 @@
         const children = [...row.querySelectorAll(':scope > div > .tree-node')].map(child => child.getBoundingClientRect());
         if (!children.length) return;
         const centers = children.map(child => (child.left + child.right) / 2);
-        line(x(Math.min(...centers)), y(rowRect.top), x(Math.max(...centers)), y(rowRect.top));
+        if (centers.length > 1) line(x(Math.min(...centers)), y(rowRect.top), x(Math.max(...centers)), y(rowRect.top));
         children.forEach((child, index) => line(x(centers[index]), y(rowRect.top), x(centers[index]), y(child.top)));
       });
     }
@@ -165,8 +166,18 @@
       verticalAvoiding(centerX, centralRect.bottom, rowRect.top, []);
       const children = [...row.querySelectorAll(':scope > div > .tree-node')].map(child => child.getBoundingClientRect());
       const centers = children.map(child => (child.left + child.right) / 2);
-      if (centers.length) line(x(Math.min(...centers)), y(rowRect.top), x(Math.max(...centers)), y(rowRect.top));
+      if (centers.length > 1) line(x(Math.min(...centers)), y(rowRect.top), x(Math.max(...centers)), y(rowRect.top));
       children.forEach((child, index) => line(x(centers[index]), y(rowRect.top), x(centers[index]), y(child.top)));
+    }
+    const siblingGroup = stage.querySelector('[data-sibling-group]');
+    if (siblingGroup) {
+      const siblings = [...siblingGroup.querySelectorAll(':scope > [data-generation-member]')].map(member => member.querySelector('[data-central-node]') || member.querySelector('.tree-node')).filter(Boolean).map(node => node.getBoundingClientRect());
+      if (siblings.length > 1) {
+        const centers = siblings.map(sibling => (sibling.left + sibling.right) / 2);
+        const barY = Math.min(...siblings.map(sibling => sibling.top)) - 12 * zoom;
+        line(x(Math.min(...centers)), y(barY), x(Math.max(...centers)), y(barY));
+        siblings.forEach((sibling, index) => line(x(centers[index]), y(barY), x(centers[index]), y(sibling.top)));
+      }
     }
     stage.prepend(svg);
   }
@@ -227,7 +238,7 @@
     const immediateChildren = person.figliIds.map(id => map.get(id)).filter(Boolean);
     const nextGeneration = [...new Set(immediateChildren.flatMap(child => child.figliIds))];
     const selectedBranch = `${couple}${otherChildren}${dLevels > 1 ? laterDescendants(nextGeneration, dLevels - 1) : ''}`;
-    const generationRow = `<div data-generation-row class="flex justify-center items-start gap-4${allShareTheSameParents ? ' border-t border-gray-300 pt-3' : ''}">${generation.map(relative => `<div data-generation-member="${esc(relative.id)}" class="flex flex-col items-center">${allShareTheSameParents ? '<span class="w-px h-3 bg-gray-300 -mt-3 mb-0" aria-hidden="true"></span>' : ''}${relative.id === person.id ? selectedBranch : node(relative)}</div>`).join('')}</div>`;
+    const generationRow = `<div data-generation-row${allShareTheSameParents ? ' data-sibling-group' : ''} class="flex justify-center items-start gap-4${allShareTheSameParents ? ' pt-3' : ''}">${generation.map(relative => `<div data-generation-member="${esc(relative.id)}" class="flex flex-col items-center">${relative.id === person.id ? selectedBranch : node(relative)}</div>`).join('')}</div>`;
     stage.innerHTML = `${parents([...person.padreIds, ...person.madreIds], aLevels, new Set(), !siblings.length || allShareTheSameParents)}${generationRow}`;
     alignUnionChildren();
     requestAnimationFrame(() => requestAnimationFrame(alignUnionChildren));
@@ -286,6 +297,7 @@
     requestAnimationFrame(centerView);
   });
   window.addEventListener('resize', alignUnionChildren);
+  new ResizeObserver(() => requestAnimationFrame(alignUnionChildren)).observe(viewport);
 
   window.IanneceAPI.fetchFamilyMembers().then(data => {
     people = data.records || [];
