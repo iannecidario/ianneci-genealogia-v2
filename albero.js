@@ -35,7 +35,7 @@
     if (!relatives.length) return '';
     relatives.forEach(person => seen.add(person.id));
     const next = [...new Set(relatives.flatMap(person => [...person.padreIds, ...person.madreIds]))];
-    return `${parents(next, level - 1, seen)}<div class="text-[10px] uppercase tracking-widest text-gray-400 my-2">${level === aLevels ? 'Genitori' : 'Antenati'}</div><div class="flex justify-center gap-4 mb-2">${relatives.map(person => node(person)).join('')}</div>${connectToGeneration ? '<div class="w-px h-5 bg-gray-300 mx-auto"></div>' : ''}`;
+    return `${parents(next, level - 1, seen)}<div class="flex justify-center gap-4 mb-2">${relatives.map(person => node(person)).join('')}</div>${connectToGeneration ? '<div class="w-px h-5 bg-gray-300 mx-auto"></div>' : ''}`;
   }
 
   function laterDescendants(ids, level, seen = new Set()) {
@@ -44,7 +44,7 @@
     if (!relatives.length) return '';
     relatives.forEach(person => seen.add(person.id));
     const next = [...new Set(relatives.flatMap(person => person.figliIds))];
-    return `<div class="w-px h-5 bg-gray-300 mx-auto"></div><div class="text-[10px] uppercase tracking-widest text-gray-400 my-2">Generazione successiva</div><div class="flex justify-center gap-4 mb-2">${relatives.map(person => node(person)).join('')}</div>${laterDescendants(next, level - 1, seen)}`;
+    return `<div class="w-px h-5 bg-gray-300 mx-auto"></div><div class="flex justify-center gap-4 mb-2">${relatives.map(person => node(person)).join('')}</div>${laterDescendants(next, level - 1, seen)}`;
   }
 
   function unionData(person) {
@@ -65,17 +65,16 @@
     const assigned = new Set(unions.flatMap(union => union.children.map(child => child.id)));
     const unassigned = person.figliIds.map(id => map.get(id)).filter(Boolean).filter(child => !assigned.has(child.id)).sort((a, b) => numericYear(a.annoNascita) - numericYear(b.annoNascita) || personName(a).localeCompare(personName(b), 'it', { sensitivity: 'base' }) || a.id.localeCompare(b.id));
     if (!unassigned.length) return '';
-    return `<section data-unassigned-children class="w-max mx-auto mt-3 flex flex-col items-center"><span class="block h-4" aria-hidden="true"></span><div data-children-label class="text-[10px] uppercase tracking-widest text-gray-400 my-1">Figli</div><span class="block h-4" aria-hidden="true"></span><div data-children-row class="pt-3 flex justify-center gap-4">${unassigned.map(child => `<div class="relative flex flex-col items-center">${node(child)}</div>`).join('')}</div></section>`;
+    return `<section data-unassigned-children class="w-max mx-auto mt-3 flex flex-col items-center"><span class="block h-5" aria-hidden="true"></span><div data-children-row class="pt-3 flex justify-center gap-4">${unassigned.map(child => `<div class="relative flex flex-col items-center">${node(child)}</div>`).join('')}</div></section>`;
   }
 
   function unionStack(person, unions) {
     if (!unions.length) return node(person, true);
     const unionRows = unions.map((union, index) => {
-      const marriageData = union.marriage.data || union.marriage.anno || '';
-      const spouseNodes = union.spouses.length ? union.spouses.map(spouse => node(spouse)).join('') : '<span class="text-xs text-gray-400">Unione</span>';
+      const spouseNodes = union.spouses.length ? union.spouses.map(spouse => node(spouse)).join('') : '<span class="block w-[8.5rem] h-10" aria-hidden="true"></span>';
       const orderedChildren = [...union.children].sort((a, b) => numericYear(a.annoNascita) - numericYear(b.annoNascita) || personName(a).localeCompare(personName(b), 'it', { sensitivity: 'base' }) || a.id.localeCompare(b.id));
-      const children = orderedChildren.length ? `<div data-children-group class="mt-2 w-max flex flex-col items-center"><span class="block h-4" aria-hidden="true"></span><div data-children-label class="text-[10px] uppercase tracking-widest text-gray-400 my-1">Figli con ${esc(union.spouses.map(personName).join(', '))}</div><span class="block h-4" aria-hidden="true"></span><div data-children-row class="pt-3 flex flex-nowrap justify-center gap-4">${orderedChildren.map(child => `<div class="relative flex flex-col items-center">${node(child)}</div>`).join('')}</div></div>` : '';
-      return `<section data-union-index="${index}" class="relative"><div data-spouse-row class="flex items-center"><span class="block w-6" aria-hidden="true"></span><div data-spouse-group class="flex flex-col gap-2">${spouseNodes}</div></div>${marriageData ? `<div data-marriage-label class="ml-6 text-[10px] text-gray-500 mt-1">${esc(marriageData)}</div>` : ''}${children}</section>`;
+      const children = orderedChildren.length ? `<div data-children-group class="mt-2 w-max flex flex-col items-center"><span class="block h-5" aria-hidden="true"></span><div data-children-row class="pt-3 flex flex-nowrap justify-center gap-4">${orderedChildren.map(child => `<div class="relative flex flex-col items-center">${node(child)}</div>`).join('')}</div></div>` : '';
+      return `<section data-union-index="${index}" class="relative"><div data-spouse-row class="flex items-center"><span class="block w-6" aria-hidden="true"></span><div data-spouse-group class="flex flex-col gap-2">${spouseNodes}</div></div>${children}</section>`;
     }).join('');
     return `<div data-union-layout class="flex items-start"><div class="shrink-0">${node(person, true)}</div><span class="block w-6" aria-hidden="true"></span><div data-union-rail class="flex flex-col gap-5">${unionRows}</div></div>`;
   }
@@ -141,7 +140,7 @@
         return { union, rect, centerY: (rect.top + rect.bottom) / 2 };
       });
       line(x(centralRect.right), y(centralY), x(railX), y(centralY), true);
-      verticalAvoiding(railX, Math.min(centralY, ...spouseCenters.map(item => item.centerY)), Math.max(centralY, ...spouseCenters.map(item => item.centerY)), [...stage.querySelectorAll('[data-marriage-label], [data-children-label]')], true);
+      verticalAvoiding(railX, Math.min(centralY, ...spouseCenters.map(item => item.centerY)), Math.max(centralY, ...spouseCenters.map(item => item.centerY)), [], true);
       spouseCenters.forEach(({ union, rect, centerY }) => {
         line(x(railX), y(centerY), x(rect.left), y(centerY), true);
         const group = union.querySelector('[data-children-group]');
@@ -150,7 +149,7 @@
         const groupRect = group.getBoundingClientRect();
         const rowRect = row.getBoundingClientRect();
         const coupleX = (centralRect.left + centralRect.right + rect.left + rect.right) / 4;
-        verticalAvoiding(coupleX, centerY, rowRect.top, [...union.querySelectorAll('[data-marriage-label], [data-children-label]')]);
+        verticalAvoiding(coupleX, centerY, rowRect.top, []);
         const children = [...row.querySelectorAll(':scope > div > .tree-node')].map(child => child.getBoundingClientRect());
         if (!children.length) return;
         const centers = children.map(child => (child.left + child.right) / 2);
@@ -163,7 +162,7 @@
       const row = unassigned.querySelector('[data-children-row]');
       const rowRect = row.getBoundingClientRect();
       const centerX = (centralRect.left + centralRect.right) / 2;
-      verticalAvoiding(centerX, centralRect.bottom, rowRect.top, [...unassigned.querySelectorAll('[data-children-label]')]);
+      verticalAvoiding(centerX, centralRect.bottom, rowRect.top, []);
       const children = [...row.querySelectorAll(':scope > div > .tree-node')].map(child => child.getBoundingClientRect());
       const centers = children.map(child => (child.left + child.right) / 2);
       if (centers.length) line(x(Math.min(...centers)), y(rowRect.top), x(Math.max(...centers)), y(rowRect.top));
